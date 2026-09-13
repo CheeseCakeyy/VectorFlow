@@ -195,8 +195,6 @@ class Window(QMainWindow):
         self.mode_buttons = QButtonGroup(self)
         for name in ['Source', 'Vectors', 'Mapping']:
             button = QPushButton(name)
-            button.setCheckable(True)
-            button.setChecked(name == 'Vectors')
             button.clicked.connect(lambda checked=False, mode=name: self.set_mode(mode))
             self.mode_buttons.addButton(button)
             modes.addWidget(button)
@@ -233,6 +231,7 @@ class Window(QMainWindow):
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
         self.apply_theme()
+        self.set_mode('Vectors')
 
     def apply_theme(self):
         bg, panel, fg, muted, border = ('#0b1018', '#151e2b', '#edf3fa', '#94a6bd', '#29384d') if self.dark else ('#eaf0f6', '#ffffff', '#172b42', '#50657d', '#cbd7e4')
@@ -301,7 +300,8 @@ class Window(QMainWindow):
     def set_mode(self, name):
         self.canvas.mode = name
         for button in self.mode_buttons.buttons():
-            button.setChecked(button.text() == name)
+            button.setStyleSheet('background: #164b46; color: #91f4dc; border-color: #36b99e;'
+                                if button.text() == name else '')
         self.canvas.update()
 
     def stop_playback(self):
