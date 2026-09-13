@@ -8,6 +8,18 @@ from vectorflow.tracking import transform
 
 
 class EditTests(unittest.TestCase):
+    def test_simplify_reduces_redundant_segments(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = Path(folder)
+            (project/'frames').mkdir()
+            path = [[[x, 10], [x+1, 10], [x+2, 10], [x+3, 10]] for x in range(0, 60, 3)]
+            write_json(project/'frames/000000.json', dict(paths=[path]))
+            add_edit(project, 0, 0, 'simplify', tolerance=1)
+            reduced = resolve_frame(project, 0)['paths'][0]
+            self.assertLess(len(reduced), len(path))
+            np.testing.assert_allclose(reduced[0][0], path[0][0])
+            np.testing.assert_allclose(reduced[-1][-1], path[-1][-1])
+
     def test_edits_follow_motion_and_undo(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)

@@ -142,6 +142,10 @@ def build_layout(window, canvas_type):
     top.addSpacing(32)
     top.addWidget(label('A TOOL FOR\nMATHEMATICAL MOTION', 'tagline'), 0, Qt.AlignmentFlag.AlignVCenter)
     top.addStretch()
+    s.edit_button = button('Editing workspace  ↗', s.open_editor, 'workspace')
+    s.edit_button.setEnabled(False)
+    top.addWidget(s.edit_button, 0, Qt.AlignmentFlag.AlignVCenter)
+    top.addSpacing(24)
     top.addWidget(label('LOCAL STUDIO   /   01', 'studio'), 0, Qt.AlignmentFlag.AlignVCenter)
     top.addSpacing(24)
     s.theme = button('Light mode', s.toggle_theme, 'theme')
@@ -240,8 +244,6 @@ def build_layout(window, canvas_type):
     side.addWidget(s.map_button)
     s.open_button = button('Open saved project', s.open_project)
     side.addWidget(s.open_button)
-    s.edit_button = button('Editing workspace…', s.open_editor)
-    side.addWidget(s.edit_button)
     s.export_button = button('Export MP4    ↓', s.export, 'export')
     s.export_button.setEnabled(False)
     side.addWidget(s.export_button)
@@ -288,6 +290,13 @@ def style_window(s):
         QPushButton:hover {{ background: {'#394031' if s.dark else '#e1e5d7'}; }}
         QPushButton:focus {{ border: 2px solid #9b7638; }}
         QPushButton#theme {{ border-radius: 19px; padding: 0; text-align: center; }}
+        QPushButton#workspace {{ background: #b8c8bd; color: #191d16; font-weight: 600; }}
+        QPushButton#workspace:disabled {{ background: {bg}; color: {muted}; }}
+        QTabWidget::pane {{ border: 1px solid {border}; }}
+        QTabBar::tab {{ background: {panel}; color: {fg}; border: 1px solid {border}; padding: 10px 20px; }}
+        QTabBar::tab:selected {{ background: #b8c8bd; color: #191d16; }}
+        QSpinBox, QDoubleSpinBox, QLineEdit {{ background: {panel}; border: 1px solid {border}; padding: 7px; min-height: 20px; }}
+        QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {{ border: none; padding: 0; min-height: 0; background: transparent; color: {fg}; }}
         QPushButton#primary {{ background: #ffbf59; color: #191d16; font-weight: 750; border-color: #191d16; padding: 14px 12px; }}
         QPushButton#primary:hover {{ background: #ffd58c; }}
         QPushButton#mapping {{ background: #b8c8bd; color: #191d16; border-color: #191d16; }}

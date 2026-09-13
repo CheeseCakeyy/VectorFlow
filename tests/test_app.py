@@ -15,6 +15,25 @@ from vectorflow.app import Window
 
 
 class AppTests(unittest.TestCase):
+    def test_region_picker_maps_drag_to_image_coordinates(self):
+        from PySide6.QtGui import QPixmap
+        from PySide6.QtCore import QPointF
+        from vectorflow.selection import RegionDialog
+        pixmap = QPixmap(400, 200)
+        pixmap.fill(Qt.GlobalColor.white)
+        dialog = RegionDialog(pixmap, [])
+        dialog.show()
+        self.app.processEvents()
+        view = dialog.view
+        start = view.mapFromScene(QPointF(40, 20))
+        end = view.mapFromScene(QPointF(240, 140))
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(view.viewport(), end)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        self.assertEqual(len(view.regions), 1)
+        np.testing.assert_allclose(view.regions[0]['rect'], [.1, .1, .5, .6], atol=.01)
+        dialog.close()
+
     def test_drag_all_demo_points_and_reset(self):
         window = Window()
         window.show()

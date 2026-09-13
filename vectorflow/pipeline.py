@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import cv2
+import numpy as np
 import imageio_ffmpeg
 from PIL import Image
 
@@ -85,6 +86,22 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
         tracker = PathTracker()
         regions = RegionTracker(settings.regions)
         color_tracer = ColorTracer()
+        if settings.style == 'color':
+            # Include later scenes when learning the fixed palette.
+            preview = cv2.VideoCapture(str(source))
+            palette_samples = []
+            try:
+                for position in np.linspace(0, min(total-1, max(0, duration*source_fps-1)), 8):
+                    if cancel.is_set():
+                        raise Cancelled('Conversion cancelled.')
+                    preview.set(cv2.CAP_PROP_POS_FRAMES, int(position))
+                    ok, sample = preview.read()
+                    if ok:
+                        palette_samples.append(cv2.cvtColor(cv2.resize(sample, (80, 80)), cv2.COLOR_BGR2RGB))
+            finally:
+                preview.release()
+            if palette_samples:
+                color_tracer.learn_palette(np.concatenate(palette_samples))
         for i in range(count):
             if cancel.is_set():
                 raise Cancelled('Conversion cancelled. Completed frames remain available.')
@@ -116,7 +133,8 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
                        regions=region_records, styles=styles))
             Path(str(stem)+'.svg').write_text(svg(paths, width, height, styles), encoding='utf-8')
             render(paths, (width, height), styles=styles).save(str(stem)+'.png')
-            manifest.update(frames=i+1, width=width, height=height)
+            manifest.update(frames=i+1, width=width, height=height,
+                            lost_regions=[r['id']+1 for r in region_records if r['lost']])
             write_json(destination/'project.json', manifest)
             progress(i+1, count, str(destination))
         manifest['status'] = 'complete'

@@ -16,11 +16,26 @@ class ColorTracer:
         self.colors = colors
         self.palette = None
 
+    def learn_palette(self, rgb):
+        # Merge codec noise before selecting distinct colors. A frequency-only
+        # palette can spend every slot on a pale background and lose dark ink.
+        pixels = np.asarray(Image.fromarray(rgb).resize((240, 240))).reshape(-1, 3)
+        bins, inverse, counts = np.unique(pixels//24, axis=0, return_inverse=True, return_counts=True)
+        colors = np.array([np.bincount(inverse, weights=pixels[:, c], minlength=len(bins))/counts for c in range(3)]).T
+        keep = counts >= 4
+        colors, counts = colors[keep], counts[keep]
+        chosen = [int(np.argmax(counts))]
+        for _ in range(self.colors-1):
+            distance = ((colors[:, None]-colors[chosen][None])**2).sum(axis=2).min(axis=1)
+            candidate = int(np.argmax(distance*np.log1p(counts)))
+            if distance[candidate] < 30**2:
+                break
+            chosen.append(candidate)
+        self.palette = np.rint(colors[chosen]).astype(np.uint8)
+
     def trace(self, rgb, tolerance=1.5, mask=None):
         if self.palette is None:
-            image = Image.fromarray(rgb).resize((160, 160)).quantize(colors=self.colors)
-            palette = np.array(image.getpalette(), dtype=np.uint8).reshape(-1, 3)
-            self.palette = palette[np.unique(np.asarray(image))]
+            self.learn_palette(rgb)
         pixels = cv2.GaussianBlur(rgb, (3, 3), .7).astype(np.float32)
         labels = np.argmin(((pixels[:, :, None]-self.palette.astype(np.float32))**2).sum(axis=3), axis=2).astype(np.uint8)
         labels = cv2.medianBlur(labels, 3)

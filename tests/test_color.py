@@ -6,6 +6,16 @@ from vectorflow.curves import render, svg
 
 
 class ColorTests(unittest.TestCase):
+    def test_small_dark_details_survive_noisy_background_palette(self):
+        rgb = np.full((180, 240, 3), 230, np.uint8)
+        rgb[::2] = 232
+        cv2.putText(rgb, 'INK', (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (20, 20, 20), 2)
+        tracer = ColorTracer()
+        paths, styles = tracer.trace(rgb)
+        self.assertTrue((tracer.palette.max(axis=1) < 50).any())
+        output = np.array(render(paths, (240, 180), styles=styles))
+        self.assertGreater((output[70:105, 50:110].max(axis=2) < 50).sum(), 80)
+
     def test_filled_regions_preserve_holes_and_palette(self):
         rgb = np.zeros((120, 160, 3), np.uint8)
         rgb[:] = (240, 240, 240)

@@ -322,6 +322,10 @@ class Editor(QDialog):
 
     def load(self, index):
         self.data = resolve_frame(self.project, index)
+        tracked = all(isinstance(identity, int) for identity in self.data['path_ids'])
+        self.scope.model().item(1).setEnabled(tracked)
+        if not tracked:
+            self.scope.setCurrentIndex(0)
         self.path_choice.blockSignals(True)
         self.path_choice.clear()
         for i, identity in enumerate(self.data['path_ids']):

@@ -49,6 +49,7 @@ class Canvas(QWidget):
         self.mode = 'Vectors'
         self.paths = []
         self.styles = []
+        self.regions = []
         self.source = QPixmap()
         self.dimensions = (720, 405)
         self.reveal = 1.0
@@ -171,6 +172,16 @@ class Canvas(QWidget):
                 for point in curve:
                     painter.setBrush(QColor('#efb46b' if self.dark else '#a65712'))
                     painter.drawEllipse(QPointF(*point), 2.4/scale, 2.4/scale)
+            for region in self.regions:
+                polygon = QPainterPath()
+                polygon.moveTo(*region['corners'][0])
+                for point in region['corners'][1:]:
+                    polygon.lineTo(*point)
+                polygon.closeSubpath()
+                color = '#ff7063' if region['lost'] else ('#65cc90' if region['mode'] == 'include' else '#ffbf59')
+                painter.setPen(QPen(QColor(color), 1.5/scale, Qt.PenStyle.DashLine))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(polygon)
 
 
 class Window(QMainWindow):
@@ -259,12 +270,14 @@ class Window(QMainWindow):
         self.canvas.source = QPixmap.fromImage(QImage(rgb.data, w, h, rgb.strides[0], QImage.Format.Format_RGB888).copy())
         self.canvas.dimensions = (w, h)
         self.canvas.paths = []
+        self.canvas.styles = []
+        self.canvas.regions = []
         self.curve_count.setText('000')
         self.set_mode('Source')
         self.file_label.setText(self.source.name)
         self.file_label.setToolTip(str(self.source))
         self.convert_button.setEnabled(True)
-        for button in [self.play, self.map_button, self.export_button]:
+        for button in [self.play, self.map_button, self.export_button, self.edit_button]:
             button.setEnabled(False)
         self.status.setText('Ready. Conversion is automatic from here.')
         self.badge.setText('VIDEO LOADED')
@@ -307,6 +320,7 @@ class Window(QMainWindow):
         self.trace_style.setEnabled(False)
         self.selection_button.setEnabled(False)
         self.export_button.setEnabled(False)
+        self.edit_button.setEnabled(False)
         self.cancel_button.show()
         self.cancel_button.setEnabled(True)
         self.worker = Worker(action)
@@ -321,6 +335,8 @@ class Window(QMainWindow):
         self.info = read_json(self.project/'project.json')
         self.progress.setValue(round(done/total*100))
         self.status.setText(f'Tracing frame {done:,} of {total:,}…')
+        if self.info.get('lost_regions'):
+            self.status.setText(f'Tracing frame {done:,} / {total:,}. Tracking lost for regions {self.info["lost_regions"]}.')
         self.badge.setText(f'{done:,} FRAMES MAPPED')
         self.timeline.setMaximum(done-1)
         if done == 1 or done % 6 == 0:
@@ -331,6 +347,8 @@ class Window(QMainWindow):
         if self.worker_kind == 'convert':
             self.load_project(path)
             self.status.setText('Conversion complete. Play the animation or watch the mapping.')
+            if self.info.get('lost_regions'):
+                self.status.setText(f'Conversion complete. Regions {self.info["lost_regions"]} lost tracking; review the Mapping view before export.')
         else:
             self.status.setText(f'Export saved to {path}')
             self.status.setToolTip(path)
@@ -356,7 +374,7 @@ class Window(QMainWindow):
         self.convert_button.setEnabled(bool(self.source))
         self.cancel_button.hide()
         available = bool(self.info and self.info['frames'])
-        for button in [self.play, self.map_button, self.export_button]:
+        for button in [self.play, self.map_button, self.export_button, self.edit_button]:
             button.setEnabled(available)
         if self.closing:
             self.close()
@@ -392,6 +410,7 @@ class Window(QMainWindow):
         self.project, self.info = Path(path), info
         self.source = Path(info['source'])
         self.regions = info.get('settings', {}).get('regions', [])
+        self.trace_style.setCurrentIndex(1 if info.get('settings', {}).get('style') == 'color' else 0)
         self.file_label.setText(self.source.name)
         self.timeline.setRange(0, info['frames']-1)
         self.timeline.setValue(0)
@@ -401,7 +420,7 @@ class Window(QMainWindow):
         self.progress.setRange(0, 100)
         self.progress.setValue(round(info['frames']/info.get('planned_frames', info['frames'])*100))
         self.status.setText(f'Project opened · {info["status"]}')
-        for button in [self.play, self.map_button, self.export_button]:
+        for button in [self.play, self.map_button, self.export_button, self.edit_button]:
             button.setEnabled(True)
         self.convert_button.setEnabled(self.source.is_file() and self.worker is None)
 
@@ -422,6 +441,7 @@ class Window(QMainWindow):
             return
         self.canvas.paths = paths
         self.canvas.styles = data.get('styles', [])
+        self.canvas.regions = data.get('regions', [])
         self.canvas.source = source
         self.canvas.dimensions = (self.info['width'], self.info['height'])
         self.canvas.reveal = 1
