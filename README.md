@@ -2,6 +2,8 @@
 
 A local Windows desktop app that automatically redraws a video as animated cubic Bézier curves. Choose a video, click **Convert video**, and preview or export the result. No manual tracing is required. The original concept is in [idea.md](idea.md).
 
+The studio uses layered folder tabs, graph-paper surfaces, bold typography, and amber/sage accents in both light and dark modes. The three tabs switch between Source, Vectors, and Mapping. A live counter displays the number of curves in the current frame. At smaller window sizes, the control column scrolls so all actions remain reachable.
+
 ## Start
 
 Dependencies are already installed in this workspace. Double-click **Start VectorFlow.bat**.

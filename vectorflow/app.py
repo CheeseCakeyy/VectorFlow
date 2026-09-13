@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QProgressBar, QSlider, QFrame, QButtonGroup)
 
 from .pipeline import Settings, Cancelled, convert, export_video, read_json
+from .design import build_layout, paper_grid, empty_art, style_window
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,26 +53,15 @@ class Canvas(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor('#111823' if self.dark else '#f5f8fc'))
+        paper_grid(painter, self.rect(), self.dark)
         if self.source.isNull():
-            painter.setPen(QColor('#93a4ba' if self.dark else '#53647a'))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                             'Your video, redrawn with mathematics.\n\nChoose a video or drop it here to begin.')
+            empty_art(painter, self.rect(), self.dark)
             return
         w, h = self.dimensions
         scale = min((self.width()-36)/w, (self.height()-36)/h)
         painter.translate((self.width()-w*scale)/2, (self.height()-h*scale)/2)
         painter.scale(scale, scale)
         painter.setClipRect(QRectF(0, 0, w, h))
-        if self.mode != 'Source':
-            painter.setPen(QPen(QColor('#202d3c' if self.dark else '#dfe6ef'), .6/scale))
-            for x in range(0, w, 40):
-                painter.drawLine(x, 0, x, h)
-            for y in range(0, h, 40):
-                painter.drawLine(0, y, w, y)
-            painter.setPen(QPen(QColor('#3b4a60' if self.dark else '#b0bfce'), 1/scale))
-            painter.drawLine(w//2, 0, w//2, h)
-            painter.drawLine(0, h//2, w, h//2)
         if self.mode in ('Source', 'Mapping'):
             painter.setOpacity(.35 if self.mode == 'Mapping' else 1)
             painter.drawPixmap(QRectF(0, 0, w, h), self.source, QRectF(self.source.rect()))
@@ -84,7 +74,7 @@ class Canvas(QWidget):
         for curve in curves[:count]:
             shape.moveTo(*curve[0])
             shape.cubicTo(*curve[1], *curve[2], *curve[3])
-        painter.setPen(QPen(QColor('#75e5cc' if self.dark else '#087e70'), 1.2))
+        painter.setPen(QPen(QColor('#d6e4b5' if self.dark else '#20281d'), 1.2))
         painter.drawPath(shape)
         if self.mode == 'Mapping':
             for curve in curves[max(0, count-5):count]:
@@ -104,8 +94,8 @@ class Window(QMainWindow):
         if font_path.exists():
             QFontDatabase.addApplicationFont(str(font_path))
         self.setWindowTitle('VectorFlow — video into curves')
-        self.resize(1280, 820)
-        self.setMinimumSize(1020, 700)
+        self.resize(1360, 940)
+        self.setMinimumSize(1060, 780)
         self.setAcceptDrops(True)
         self.source = None
         self.project = None
@@ -115,118 +105,7 @@ class Window(QMainWindow):
         self.playing = False
         self.mapping = False
         self.dark = True
-        base = QWidget()
-        self.setCentralWidget(base)
-        layout = QVBoxLayout(base)
-        layout.setContentsMargins(26, 20, 26, 18)
-        layout.setSpacing(18)
-        top = QHBoxLayout()
-        brand = QLabel('VectorFlow')
-        brand.setObjectName('brand')
-        top.addWidget(brand)
-        top.addWidget(QLabel('VIDEO → CURVES → MOTION'))
-        top.addStretch()
-        self.theme = QPushButton('Light mode')
-        self.theme.clicked.connect(self.toggle_theme)
-        top.addWidget(self.theme)
-        layout.addLayout(top)
-        content = QHBoxLayout()
-        content.setSpacing(22)
-        side = QFrame()
-        side.setObjectName('panel')
-        side.setFixedWidth(274)
-        sidebar = QVBoxLayout(side)
-        sidebar.setContentsMargins(20, 22, 20, 22)
-        sidebar.setSpacing(14)
-        title = QLabel('Make motion\nmathematical.')
-        title.setObjectName('headline')
-        sidebar.addWidget(title)
-        subtitle = QLabel('One video in. Thousands of curves out.\nNo tracing required.')
-        subtitle.setWordWrap(True)
-        sidebar.addWidget(subtitle)
-        sidebar.addSpacing(8)
-        sidebar.addWidget(QLabel('01   SOURCE VIDEO'))
-        self.file_label = QLabel('Choose a video to get started')
-        self.file_label.setWordWrap(True)
-        sidebar.addWidget(self.file_label)
-        self.choose = QPushButton('+  Choose video')
-        self.choose.clicked.connect(self.choose_video)
-        sidebar.addWidget(self.choose)
-        sidebar.addSpacing(12)
-        sidebar.addWidget(QLabel('02   AUTOMATIC CONVERSION'))
-        self.quality = QComboBox()
-        self.quality.addItems(['Balanced · 720 px / 12 fps', 'Detailed · 1080 px / 24 fps', 'Quick · 480 px / 8 fps'])
-        self.quality.setToolTip('Maximum longest edge in pixels. Frame rate never exceeds the source.')
-        sidebar.addWidget(self.quality)
-        self.convert_button = QPushButton('Convert video  →')
-        self.convert_button.setObjectName('primary')
-        self.convert_button.clicked.connect(self.start_conversion)
-        self.convert_button.setEnabled(False)
-        sidebar.addWidget(self.convert_button)
-        self.cancel_button = QPushButton('Cancel processing')
-        self.cancel_button.clicked.connect(self.cancel)
-        self.cancel_button.hide()
-        sidebar.addWidget(self.cancel_button)
-        self.progress = QProgressBar()
-        self.progress.setValue(0)
-        sidebar.addWidget(self.progress)
-        self.status = QLabel('Everything runs locally on your computer.')
-        self.status.setWordWrap(True)
-        sidebar.addWidget(self.status)
-        sidebar.addStretch()
-        self.open_button = QPushButton('Open saved project')
-        self.open_button.clicked.connect(self.open_project)
-        sidebar.addWidget(self.open_button)
-        self.export_button = QPushButton('Export MP4  ↗')
-        self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self.export)
-        sidebar.addWidget(self.export_button)
-        content.addWidget(side)
-        main = QVBoxLayout()
-        heading = QHBoxLayout()
-        label = QLabel('Animation studio')
-        label.setObjectName('section')
-        heading.addWidget(label)
-        heading.addStretch()
-        self.badge = QLabel('READY WHEN YOU ARE')
-        heading.addWidget(self.badge)
-        main.addLayout(heading)
-        modes = QHBoxLayout()
-        self.mode_buttons = QButtonGroup(self)
-        for name in ['Source', 'Vectors', 'Mapping']:
-            button = QPushButton(name)
-            button.clicked.connect(lambda checked=False, mode=name: self.set_mode(mode))
-            self.mode_buttons.addButton(button)
-            modes.addWidget(button)
-        modes.addStretch()
-        self.map_button = QPushButton('Watch mapping')
-        self.map_button.clicked.connect(self.watch_mapping)
-        self.map_button.setEnabled(False)
-        modes.addWidget(self.map_button)
-        main.addLayout(modes)
-        self.canvas = Canvas()
-        main.addWidget(self.canvas, 1)
-        transport = QHBoxLayout()
-        self.play = QPushButton('Play')
-        self.play.setEnabled(False)
-        self.play.clicked.connect(self.toggle_play)
-        transport.addWidget(self.play)
-        self.timeline = QSlider(Qt.Orientation.Horizontal)
-        self.timeline.setRange(0, 0)
-        self.timeline.valueChanged.connect(self.load_frame)
-        transport.addWidget(self.timeline, 1)
-        self.time_label = QLabel('00:00 / 00:00')
-        transport.addWidget(self.time_label)
-        main.addLayout(transport)
-        self.equation = QLabel('THE MATH BEHIND THE MOTION\nB(t) = (1−t)³P₀ + 3(1−t)²tP₁ + 3(1−t)t²P₂ + t³P₃    ·    0 ≤ t ≤ 1')
-        self.equation.setObjectName('equation')
-        self.equation.setWordWrap(True)
-        self.equation.setMinimumHeight(100)
-        main.addWidget(self.equation)
-        content.addLayout(main, 1)
-        layout.addLayout(content, 1)
-        footer = QLabel('AUTOMATIC BÉZIER TRACING     /     LOCAL PROCESSING     /     SVG + JSON + MP4')
-        layout.addWidget(footer)
+        build_layout(self, Canvas)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
@@ -234,29 +113,7 @@ class Window(QMainWindow):
         self.set_mode('Vectors')
 
     def apply_theme(self):
-        bg, panel, fg, muted, border = ('#0b1018', '#151e2b', '#edf3fa', '#94a6bd', '#29384d') if self.dark else ('#eaf0f6', '#ffffff', '#172b42', '#50657d', '#cbd7e4')
-        self.setStyleSheet(f'''
-            QWidget {{ background: {bg}; color: {fg}; font-family: 'Segoe UI'; font-size: 13px; }}
-            QLabel {{ background: transparent; }}
-            QFrame#panel, QLabel#equation {{ background: {panel}; border: 1px solid {border}; border-radius: 14px; }}
-            QLabel#equation {{ padding: 15px; color: {muted}; }}
-            QLabel#brand {{ font-size: 25px; font-weight: 700; padding-right: 24px; }}
-            QLabel#headline {{ font-size: 25px; font-weight: 650; }}
-            QLabel#section {{ font-size: 20px; font-weight: 600; }}
-            QPushButton, QComboBox {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 10px 12px; }}
-            QPushButton:hover {{ border-color: #36b99e; }}
-            QPushButton:checked {{ background: #164b46; color: #91f4dc; border-color: #36b99e; }}
-            QPushButton#primary {{ background: #75e5cc; color: #102822; font-weight: 700; border: none; }}
-            QPushButton:disabled {{ color: {muted}; background: {bg}; }}
-            QComboBox QAbstractItemView {{ background: {panel}; color: {fg}; selection-background-color: #287768; }}
-            QProgressBar {{ border: none; background: {bg}; height: 7px; border-radius: 3px; text-align: center; }}
-            QProgressBar::chunk {{ background: #39bca1; border-radius: 3px; }}
-            QSlider::groove:horizontal {{ height: 5px; background: {border}; border-radius: 2px; }}
-            QSlider::handle:horizontal {{ background: #39bca1; width: 14px; margin: -5px 0; border-radius: 7px; }}
-        ''')
-        self.canvas.dark = self.dark
-        self.canvas.update()
-        self.theme.setText('Light mode' if self.dark else 'Dark mode')
+        style_window(self)
 
     def toggle_theme(self):
         self.dark = not self.dark
@@ -287,6 +144,7 @@ class Window(QMainWindow):
         self.canvas.source = QPixmap.fromImage(QImage(rgb.data, w, h, rgb.strides[0], QImage.Format.Format_RGB888).copy())
         self.canvas.dimensions = (w, h)
         self.canvas.paths = []
+        self.curve_count.setText('000')
         self.set_mode('Source')
         self.file_label.setText(self.source.name)
         self.file_label.setToolTip(str(self.source))
@@ -300,8 +158,8 @@ class Window(QMainWindow):
     def set_mode(self, name):
         self.canvas.mode = name
         for button in self.mode_buttons.buttons():
-            button.setStyleSheet('background: #164b46; color: #91f4dc; border-color: #36b99e;'
-                                if button.text() == name else '')
+            button.active = button.text() == name
+            button.update()
         self.canvas.update()
 
     def stop_playback(self):
@@ -439,6 +297,7 @@ class Window(QMainWindow):
 
     def update_equation(self):
         curves = [c for path in self.canvas.paths for c in path]
+        self.curve_count.setText(f'{len(curves):03,d}')
         count = int(len(curves)*self.canvas.reveal)
         if count:
             c = curves[count-1]
