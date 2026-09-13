@@ -16,7 +16,7 @@ The mapping view should make the mathematics tangible: reveal paths progressivel
 ## Technical direction
 
 - Python backend, with OpenCV and NumPy for video decoding, outline extraction, and numerical curve fitting.
-- Python desktop interface initially, using Tkinter and Pillow to keep installation approachable.
+- PySide6 desktop interface with an approachable layout, a large preview, and explicit dark and light themes; Pillow for export rendering.
 - Fit cubic curves to ordered contours, with an error threshold and subdivision; do not merely label a raster edge filter as vectorization.
 - Render curves independently of the source pixels. Store explicit control points per frame; export SVG paths and a reusable JSON project format.
 - Process in a background worker with progress, cancellation, clear errors, and bounded memory through files on disk.
