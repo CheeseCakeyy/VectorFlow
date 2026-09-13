@@ -39,10 +39,12 @@ def fit(points, tolerance=1.5):
     return fit(p[:split+1], tolerance) + fit(p[split:], tolerance)
 
 
-def trace(rgb, tolerance=1.5, detail=70):
+def trace(rgb, tolerance=1.5, detail=70, mask=None):
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0.8)
     edges = cv2.Canny(gray, detail, detail*2)
+    if mask is not None:
+        edges = cv2.bitwise_and(edges, mask)
     contours, hierarchy = cv2.findContours(edges, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     # CCOMP preserves disconnected details inside a larger outline, such as eyes,
     # while skipping the reverse boundary of the same thin edge component.

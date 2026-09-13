@@ -99,3 +99,51 @@ class PathTracker:
                 self.next_id += 1
         self.previous, self.records = gray, result
         return result
+
+
+class RegionTracker:
+    def __init__(self, regions):
+        self.specs = regions
+        self.records = []
+        self.previous = None
+
+    def update(self, rgb):
+        h, w = rgb.shape[:2]
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        if self.previous is None:
+            for i, spec in enumerate(self.specs):
+                x, y, rw, rh = np.array(spec['rect'])*[w, h, w, h]
+                corners = [[x, y], [x+rw, y], [x+rw, y+rh], [x, y+rh]]
+                self.records.append(dict(id=i, mode=spec['mode'], corners=corners,
+                                         transform=np.eye(3).tolist(), lost=False))
+        else:
+            motion = Motion(self.previous, gray)
+            for record in self.records:
+                if record['lost']:
+                    continue
+                matrix = motion.within(record['corners']) if not motion.cut else None
+                if matrix is None:
+                    # A truly stationary region needs no feature motion estimate.
+                    mask = np.zeros_like(gray)
+                    cv2.fillPoly(mask, [np.int32(record['corners'])], 255)
+                    delta = cv2.absdiff(self.previous, gray)[mask > 0]
+                    if len(delta) and delta.mean() < 2:
+                        matrix = np.eye(3)
+                    else:
+                        record['lost'] = True
+                        continue
+                record['corners'] = transform(record['corners'], matrix)
+                record['transform'] = (matrix @ record['transform']).tolist()
+        self.previous = gray
+        include = any(r['mode'] == 'include' for r in self.records)
+        mask = np.zeros((h, w), np.uint8) if include else np.full((h, w), 255, np.uint8)
+        for record in self.records:
+            if record['mode'] == 'include' and not record['lost']:
+                cv2.fillPoly(mask, [np.int32(record['corners'])], 255)
+        for record in self.records:
+            if record['mode'] == 'exclude':
+                if record['lost']:
+                    mask[:] = 0
+                else:
+                    cv2.fillPoly(mask, [np.int32(record['corners'])], 0)
+        return mask, self.records

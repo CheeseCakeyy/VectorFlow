@@ -177,6 +177,7 @@ class Window(QMainWindow):
         self.mapping = False
         self.dark = True
         build_layout(self, Canvas)
+        self.regions = []
         self.canvas.demo_changed.connect(self.show_demo_equation)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -201,6 +202,26 @@ class Window(QMainWindow):
         if path:
             self.set_source(path)
 
+    def select_regions(self):
+        if self.worker or not self.source:
+            QMessageBox.information(self, 'Choose a video', 'Choose a video first, then select regions to trace.')
+            return
+        import cv2
+        from PySide6.QtGui import QImage
+        from .selection import RegionDialog
+        cap = cv2.VideoCapture(str(self.source))
+        ok, bgr = cap.read()
+        cap.release()
+        if not ok:
+            return
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
+        pixmap = QPixmap.fromImage(QImage(rgb.data, w, h, rgb.strides[0], QImage.Format.Format_RGB888).copy())
+        dialog = RegionDialog(pixmap, self.regions, self)
+        if dialog.exec():
+            self.regions = dialog.view.regions
+            self.status.setText(f'{len(self.regions)} tracked regions selected. Convert to apply.')
+
     def set_source(self, path):
         if self.worker is not None:
             return
@@ -215,6 +236,7 @@ class Window(QMainWindow):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w = rgb.shape[:2]
         self.source = Path(path)
+        self.regions = []
         self.project = self.info = None
         self.stop_playback()
         self.timeline.setRange(0, 0)
@@ -250,6 +272,7 @@ class Window(QMainWindow):
         self.stop_playback()
         settings = [Settings(), Settings(max_width=1080, fps=24, tolerance=1, detail=50),
                     Settings(max_width=480, fps=8, tolerance=2, detail=90)][self.quality.currentIndex()]
+        settings.regions = self.regions
         destination = ROOT/'outputs'/f'{self.source.stem[:45]}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:6]}'
         self.project = None
         self.info = None
@@ -264,6 +287,7 @@ class Window(QMainWindow):
         self.open_button.setEnabled(False)
         self.convert_button.setEnabled(False)
         self.quality.setEnabled(False)
+        self.selection_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.cancel_button.show()
         self.cancel_button.setEnabled(True)
@@ -309,6 +333,7 @@ class Window(QMainWindow):
         self.choose.setEnabled(True)
         self.open_button.setEnabled(True)
         self.quality.setEnabled(True)
+        self.selection_button.setEnabled(True)
         self.convert_button.setEnabled(bool(self.source))
         self.cancel_button.hide()
         available = bool(self.info and self.info['frames'])
@@ -338,6 +363,7 @@ class Window(QMainWindow):
         self.stop_playback()
         self.project, self.info = Path(path), info
         self.source = Path(info['source'])
+        self.regions = info.get('settings', {}).get('regions', [])
         self.file_label.setText(self.source.name)
         self.timeline.setRange(0, info['frames']-1)
         self.timeline.setValue(0)

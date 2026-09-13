@@ -212,6 +212,8 @@ def build_layout(window, canvas_type):
     side.addWidget(s.file_label)
     s.choose = button('+   Choose video', s.choose_video, 'choose')
     side.addWidget(s.choose)
+    s.selection_button = button('Selective tracing…', s.select_regions)
+    side.addWidget(s.selection_button)
     s.quality = QComboBox()
     s.quality.addItems(['Balanced · 720 px / 12 fps', 'Detailed · 1080 px / 24 fps', 'Quick · 480 px / 8 fps'])
     s.quality.setToolTip('Maximum longest edge. Frame rate never exceeds the source.')
