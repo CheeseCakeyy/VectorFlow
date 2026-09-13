@@ -240,6 +240,8 @@ def build_layout(window, canvas_type):
     side.addWidget(s.map_button)
     s.open_button = button('Open saved project', s.open_project)
     side.addWidget(s.open_button)
+    s.edit_button = button('Editing workspace…', s.open_editor)
+    side.addWidget(s.edit_button)
     s.export_button = button('Export MP4    ↓', s.export, 'export')
     s.export_button.setEnabled(False)
     side.addWidget(s.export_button)

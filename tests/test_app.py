@@ -91,6 +91,19 @@ class AppTests(unittest.TestCase):
                 QTest.mouseClick(window.export_button, Qt.MouseButton.LeftButton)
                 self.wait_for_worker(window)
             self.assertTrue((root/'export.mp4').is_file())
+            from vectorflow.editor import Editor
+            from vectorflow.edits import operations
+            editor = Editor(window.project)
+            editor.show()
+            self.app.processEvents()
+            self.assertEqual(len(editor.view.handles), 4)
+            handle = editor.view.handles[1]
+            handle.setPos(handle.pos().x(), handle.pos().y()+10)
+            editor.apply_edit('shape')
+            self.assertEqual(operations(window.project)[-1]['action'], 'shape')
+            editor.undo()
+            self.assertEqual(operations(window.project), [])
+            editor.close()
             window.toggle_theme()
             self.assertFalse(window.dark)
             window.close()

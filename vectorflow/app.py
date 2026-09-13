@@ -375,6 +375,15 @@ class Window(QMainWindow):
             except Exception as exc:
                 QMessageBox.warning(self, 'Cannot open project', str(exc))
 
+    def open_editor(self):
+        if self.worker or not self.project or not self.info or not self.info['frames']:
+            QMessageBox.information(self, 'Convert a video first', 'Open or convert a project before editing its paths.')
+            return
+        from .editor import Editor
+        self.stop_playback()
+        Editor(self.project, self.timeline.value(), self).exec()
+        self.load_frame(self.timeline.value())
+
     def load_project(self, path):
         info = read_json(Path(path)/'project.json')
         if info.get('version') != 1 or info.get('frames', 0) < 1 or info.get('fps', 0) <= 0:
@@ -401,7 +410,8 @@ class Window(QMainWindow):
             return
         stem = self.project/'frames'/f'{index:06d}'
         try:
-            data = read_json(str(stem)+'.json')
+            from .edits import resolve_frame
+            data = resolve_frame(self.project, index)
             paths = data['paths']
             source = QPixmap(str(stem)+'.jpg')
             if source.isNull():

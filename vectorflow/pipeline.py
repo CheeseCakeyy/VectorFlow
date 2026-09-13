@@ -141,10 +141,20 @@ def export_video(project, output, progress=None, cancel=None):
     if output.resolve() == Path(info['source']).resolve():
         raise ValueError('Choose a new file; the source video cannot be overwritten.')
     cancel = cancel or threading.Event()
+    from .edits import resolve_frame, operations
+    frame_directory = project/'frames'
+    if operations(project):
+        frame_directory = project/'rendered-edits'
+        frame_directory.mkdir(exist_ok=True)
+        for index in range(info['frames']):
+            if cancel.is_set():
+                raise Cancelled('Export cancelled.')
+            data = resolve_frame(project, index)
+            render(data['paths'], (info['width'], info['height']), styles=data['styles']).save(frame_directory/f'{index:06d}.png')
     duration = min(info['duration'], info['frames']/info['fps'])
     temporary = output.with_name(output.stem+'.encoding.mp4')
     command = [imageio_ffmpeg.get_ffmpeg_exe(), '-hide_banner', '-loglevel', 'error', '-y',
-               '-framerate', str(info['fps']), '-i', str(project/'frames'/'%06d.png')]
+               '-framerate', str(info['fps']), '-i', str(frame_directory/'%06d.png')]
     has_source = Path(info['source']).is_file()
     if has_source:
         command += ['-i', info['source']]
