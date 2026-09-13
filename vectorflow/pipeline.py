@@ -14,6 +14,7 @@ from PIL import Image
 
 from .curves import render, svg, trace
 from .stability import Stabilizer
+from .tracking import PathTracker
 
 
 class Cancelled(Exception):
@@ -78,6 +79,7 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
         write_json(destination/'project.json', manifest)
         decoded = -1
         stabilizer = Stabilizer()
+        tracker = PathTracker()
         for i in range(count):
             if cancel.is_set():
                 raise Cancelled('Conversion cancelled. Completed frames remain available.')
@@ -94,9 +96,12 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
             width, height = max(2, round(w*factor)), max(2, round(h*factor))
             rgb = cv2.cvtColor(cv2.resize(bgr, (width, height), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
             paths = trace(stabilizer.apply(rgb), settings.tolerance, settings.detail)
+            tracked = tracker.update(rgb, paths)
+            paths = [record['path'] for record in tracked]
             stem = frames/f'{i:06d}'
             Image.fromarray(rgb).save(str(stem)+'.jpg', quality=90)
-            write_json(str(stem)+'.json', dict(time=i/fps, paths=paths))
+            write_json(str(stem)+'.json', dict(time=i/fps, paths=paths,
+                       path_ids=[r['id'] for r in tracked], transforms=[r['transform'] for r in tracked]))
             Path(str(stem)+'.svg').write_text(svg(paths, width, height), encoding='utf-8')
             render(paths, (width, height)).save(str(stem)+'.png')
             manifest.update(frames=i+1, width=width, height=height)
