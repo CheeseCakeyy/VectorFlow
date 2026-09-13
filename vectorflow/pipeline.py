@@ -4,6 +4,7 @@ import json
 import math
 import subprocess
 import threading
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import imageio_ffmpeg
 from PIL import Image
 
 from .curves import render, svg, trace
+from .stability import Stabilizer
 
 
 class Cancelled(Exception):
@@ -35,7 +37,16 @@ def write_json(path, value):
     target = Path(path)
     temporary = target.with_suffix(target.suffix + '.tmp')
     temporary.write_text(json.dumps(value, separators=(',', ':')), encoding='utf-8')
-    temporary.replace(target)
+    # Windows can briefly deny replacement while the UI reads the old manifest.
+    # Keep the file atomic and retry after that reader releases its handle.
+    for attempt in range(20):
+        try:
+            temporary.replace(target)
+            break
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(.01)
 
 
 def convert(source, destination, settings=None, progress=None, cancel=None):
@@ -66,6 +77,7 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
                         status='processing', settings=asdict(settings), width=0, height=0)
         write_json(destination/'project.json', manifest)
         decoded = -1
+        stabilizer = Stabilizer()
         for i in range(count):
             if cancel.is_set():
                 raise Cancelled('Conversion cancelled. Completed frames remain available.')
@@ -81,7 +93,7 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
             factor = min(1.0, settings.max_width/max(w, h))
             width, height = max(2, round(w*factor)), max(2, round(h*factor))
             rgb = cv2.cvtColor(cv2.resize(bgr, (width, height), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
-            paths = trace(rgb, settings.tolerance, settings.detail)
+            paths = trace(stabilizer.apply(rgb), settings.tolerance, settings.detail)
             stem = frames/f'{i:06d}'
             Image.fromarray(rgb).save(str(stem)+'.jpg', quality=90)
             write_json(str(stem)+'.json', dict(time=i/fps, paths=paths))
