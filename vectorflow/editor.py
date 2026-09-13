@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainterPath, QPen, QBrush, QPixmap, QPainter
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QDoubleSpinBox, QGraphicsView, QGraphicsScene, QGraphicsItem,
-    QSlider, QTabWidget, QWidget, QMessageBox)
+    QSlider, QTabWidget, QWidget, QMessageBox, QFileDialog, QProgressBar)
 from .pipeline import read_json
 from .edits import resolve_frame, add_edit, undo
 
@@ -84,6 +84,8 @@ class Editor(QDialog):
         actions.addWidget(undo_button)
         controls.addLayout(actions)
         self.tabs.addTab(cleanup, 'Cleanup')
+        self.export_worker = None
+        self.add_export_tab()
         layout.addWidget(self.tabs)
         self.view = EditView(self)
         layout.addWidget(self.view, 1)
@@ -103,6 +105,64 @@ class Editor(QDialog):
         done.clicked.connect(self.accept)
         layout.addWidget(done)
         self.load(index)
+
+    def add_export_tab(self):
+        from .exports import FORMATS
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        hint = QLabel('Export the resolved vector animation, including cleanup edits.\nPNG and ProRes exports carry transparency. SVG animation support varies by design tool. ProRes is video-only; use the studio MP4 export for source audio.')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.export_format = QComboBox()
+        self.export_format.addItems(FORMATS)
+        layout.addWidget(self.export_format)
+        self.asset_export = QPushButton('Export animation…')
+        self.asset_export.clicked.connect(self.export_assets)
+        layout.addWidget(self.asset_export)
+        self.export_progress = QProgressBar()
+        self.export_progress.setValue(0)
+        layout.addWidget(self.export_progress)
+        self.tabs.addTab(page, 'Export')
+
+    def export_assets(self):
+        from .exports import export_assets, FORMATS
+        from .app import Worker
+        kind = self.export_format.currentText()
+        suffix = FORMATS[kind]
+        path, _ = QFileDialog.getSaveFileName(self, 'Export animation', str(self.project/('animation'+suffix)), f'Output (*{suffix})')
+        if not path:
+            return
+        if not Path(path).suffix:
+            path += suffix
+        self.tabs.setEnabled(False)
+        self.timeline.setEnabled(False)
+        self.notice.setText('Exporting… Close this workspace to cancel the export.')
+        self.export_worker = Worker(lambda progress, cancel: export_assets(self.project, path, kind, progress, cancel))
+        self.export_worker.progress.connect(lambda i, n, _: self.export_progress.setValue(round(100*i/n)))
+        self.export_worker.completed.connect(lambda result: self.notice.setText(f'Export saved: {result}'))
+        self.export_worker.failed.connect(lambda message: self.notice.setText(message))
+        self.export_worker.finished.connect(self.export_finished)
+        self.export_worker.start()
+
+    def export_finished(self):
+        self.export_worker.deleteLater()
+        self.export_worker = None
+        self.tabs.setEnabled(True)
+        self.timeline.setEnabled(True)
+
+    def done(self, result):
+        if self.export_worker is not None:
+            self.export_worker.cancel.set()
+            self.notice.setText('Cancelling export; close again after it stops.')
+            return
+        super().done(result)
+
+    def closeEvent(self, event):
+        if self.export_worker is not None:
+            self.export_worker.cancel.set()
+            event.ignore()
+        else:
+            super().closeEvent(event)
 
     def load(self, index):
         self.data = resolve_frame(self.project, index)
