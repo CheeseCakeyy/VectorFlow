@@ -20,7 +20,7 @@ FORMATS = {
 }
 
 
-def export_assets(project, output, kind, progress, cancel):
+def export_assets(project, output, kind, progress, cancel, include_replacements=False):
     project, output = Path(project), Path(output)
     info = read_json(project/'project.json')
     if not info['frames']:
@@ -29,6 +29,8 @@ def export_assets(project, output, kind, progress, cancel):
         raise ValueError('The source video cannot be overwritten.')
     if kind not in FORMATS:
         raise ValueError('Unknown export format.')
+    from .replacement import replacements, composite, composite_svg
+    include_replacements = include_replacements and bool(replacements(project))
     with tempfile.TemporaryDirectory(prefix='vectorflow-export-', dir=output.parent) as directory:
         root = Path(directory)
         destination = root/('result'+FORMATS[kind])
@@ -41,17 +43,21 @@ def export_assets(project, output, kind, progress, cancel):
                     raise Cancelled('Export cancelled.')
                 data = resolve_frame(project, i)
                 if kind.startswith('SVG sequence'):
-                    archive.writestr(f'{i:06d}.svg', svg(data['paths'], info['width'], info['height'], data['styles'], True))
+                    content = composite_svg(project, i) if include_replacements else svg(data['paths'], info['width'], info['height'], data['styles'], True)
+                    archive.writestr(f'{i:06d}.svg', content)
                 elif kind.startswith(('Transparent PNG', 'ProRes')):
                     file = root/f'{i:06d}.png'
-                    render(data['paths'], (info['width'], info['height']), styles=data['styles'], transparent=True).save(file)
+                    image = composite(project, i) if include_replacements else render(data['paths'], (info['width'], info['height']), styles=data['styles'], transparent=True)
+                    image.save(file)
                     if archive:
                         archive.write(file, file.name)
                         file.unlink()
                 elif kind.startswith('Vector animation'):
+                    if include_replacements:
+                        data['composite_svg'] = composite_svg(project, i)
                     frames.append(data)
                 elif kind.startswith('Animated SVG'):
-                    parsed = ET.fromstring(svg(data['paths'], info['width'], info['height'], data['styles'], True))
+                    parsed = ET.fromstring(composite_svg(project, i) if include_replacements else svg(data['paths'], info['width'], info['height'], data['styles'], True))
                     group = ET.Element('g', visibility='hidden')
                     for child in parsed:
                         group.append(child)

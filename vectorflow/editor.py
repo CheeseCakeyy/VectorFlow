@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainterPath, QPen, QBrush, QPixmap, QPainter
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QDoubleSpinBox, QGraphicsView, QGraphicsScene, QGraphicsItem,
-    QSlider, QTabWidget, QWidget, QMessageBox, QFileDialog, QProgressBar)
+    QSlider, QTabWidget, QWidget, QMessageBox, QFileDialog, QProgressBar, QLineEdit, QCheckBox)
 from .pipeline import read_json
 from .edits import resolve_frame, add_edit, undo
 
@@ -85,6 +85,8 @@ class Editor(QDialog):
         controls.addLayout(actions)
         self.tabs.addTab(cleanup, 'Cleanup')
         self.export_worker = None
+        self.replace_rect = None
+        self.add_replacement_tab()
         self.add_export_tab()
         layout.addWidget(self.tabs)
         self.view = EditView(self)
@@ -105,6 +107,99 @@ class Editor(QDialog):
         done.clicked.connect(self.accept)
         layout.addWidget(done)
         self.load(index)
+        self.range_start.setValue(index+1)
+        self.tabs.currentChanged.connect(lambda _: self.load(self.timeline.value()))
+
+    def add_replacement_tab(self):
+        page = QWidget()
+        self.replacement_page = page
+        layout = QVBoxLayout(page)
+        hint = QLabel('Mark the original text at the start frame. The replacement follows position, scale and rotation.\nThe original region is reconstructed with local inpainting. Detailed backgrounds may smear. Tracking stops at cuts or loss of the region.')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        row = QHBoxLayout()
+        self.range_start = QSpinBox()
+        self.range_end = QSpinBox()
+        for spin in [self.range_start, self.range_end]:
+            spin.setRange(1, self.info['frames'])
+        self.range_end.setValue(self.info['frames'])
+        row.addWidget(QLabel('Start frame'))
+        row.addWidget(self.range_start)
+        row.addWidget(QLabel('End frame'))
+        row.addWidget(self.range_end)
+        choose = QPushButton('Mark text region…')
+        choose.clicked.connect(self.pick_replacement_region)
+        row.addWidget(choose)
+        layout.addLayout(row)
+        row = QHBoxLayout()
+        self.replacement_text = QLineEdit()
+        self.replacement_text.setPlaceholderText('Your replacement words')
+        row.addWidget(self.replacement_text, 1)
+        self.text_color = QLineEdit('#ffffff')
+        self.text_color.setMaximumWidth(100)
+        row.addWidget(self.text_color)
+        run = QPushButton('Track & replace text')
+        run.clicked.connect(self.replace_text)
+        row.addWidget(run)
+        clear = QPushButton('Remove last replacement')
+        clear.clicked.connect(self.remove_replacement)
+        row.addWidget(clear)
+        layout.addLayout(row)
+        self.tabs.addTab(page, 'Replace text')
+
+    def pick_replacement_region(self):
+        from .selection import RegionDialog
+        frame = self.range_start.value()-1
+        pixmap = QPixmap(str(self.project/'frames'/f'{frame:06d}.jpg'))
+        dialog = RegionDialog(pixmap, [], self)
+        dialog.setWindowTitle('Mark the text or object to replace — one include rectangle')
+        if dialog.exec() and dialog.view.regions:
+            includes = [r for r in dialog.view.regions if r['mode'] == 'include']
+            if len(includes) != 1:
+                self.notice.setText('Select exactly one include rectangle for replacement.')
+                return
+            self.replace_rect = includes[0]['rect']
+            self.replace_anchor = frame
+            self.notice.setText(f'Region marked at frame {frame+1}. Enter words, then track the replacement.')
+
+    def replace_text(self):
+        from .replacement import create_text
+        if not self.replace_rect or self.replace_anchor != self.range_start.value()-1:
+            self.notice.setText('Mark a region at the selected start frame first.')
+            return
+        if not QColor(self.text_color.text()).isValid():
+            self.notice.setText('Enter a color such as #ffffff.')
+            return
+        text = self.replacement_text.text()
+        color = QColor(self.text_color.text()).name()
+        start, end = self.range_start.value()-1, self.range_end.value()-1
+        self.start_job(lambda progress, cancel: create_text(self.project, self.replace_rect, start, end, text, color, progress, cancel))
+
+    def start_job(self, action):
+        from .app import Worker
+        self.tabs.setEnabled(False)
+        self.timeline.setEnabled(False)
+        self.notice.setText('Tracking replacement… Close this workspace to cancel.')
+        self.export_worker = Worker(action)
+        self.export_worker.progress.connect(lambda i, n, _: self.notice.setText(f'Tracking frame {i} / {n}…'))
+        self.export_worker.completed.connect(lambda _: self.notice.setText('Replacement saved. Scrub the timeline here to review tracking. Studio MP4 export includes the composite.'))
+        self.export_worker.failed.connect(lambda message: self.notice.setText(message))
+        self.export_worker.finished.connect(self.replacement_finished)
+        self.export_worker.start()
+
+    def replacement_finished(self):
+        self.export_finished()
+        self.load(self.timeline.value())
+
+    def remove_replacement(self):
+        from .replacement import replacements
+        from .pipeline import write_json
+        records = replacements(self.project)
+        if records:
+            records.pop()
+            write_json(self.project/'replacements.json', records)
+            self.load(self.timeline.value())
+            self.notice.setText('Last replacement removed.')
 
     def add_export_tab(self):
         from .exports import FORMATS
@@ -116,6 +211,9 @@ class Editor(QDialog):
         self.export_format = QComboBox()
         self.export_format.addItems(FORMATS)
         layout.addWidget(self.export_format)
+        self.include_replacements = QCheckBox('Include replacements and original footage (opaque background)')
+        self.include_replacements.setChecked(True)
+        layout.addWidget(self.include_replacements)
         self.asset_export = QPushButton('Export animation…')
         self.asset_export.clicked.connect(self.export_assets)
         layout.addWidget(self.asset_export)
@@ -137,7 +235,8 @@ class Editor(QDialog):
         self.tabs.setEnabled(False)
         self.timeline.setEnabled(False)
         self.notice.setText('Exporting… Close this workspace to cancel the export.')
-        self.export_worker = Worker(lambda progress, cancel: export_assets(self.project, path, kind, progress, cancel))
+        include = self.include_replacements.isChecked()
+        self.export_worker = Worker(lambda progress, cancel: export_assets(self.project, path, kind, progress, cancel, include))
         self.export_worker.progress.connect(lambda i, n, _: self.export_progress.setValue(round(100*i/n)))
         self.export_worker.completed.connect(lambda result: self.notice.setText(f'Export saved: {result}'))
         self.export_worker.failed.connect(lambda message: self.notice.setText(message))
@@ -178,6 +277,19 @@ class Editor(QDialog):
         self.view.handles = []
         scene = self.view.scene()
         scene.clear()
+        if self.tabs.currentWidget() == self.replacement_page:
+            from .replacement import composite, replacements
+            from PySide6.QtGui import QImage
+            image = composite(self.project, self.timeline.value())
+            rgba = image.tobytes()
+            pixmap = QPixmap.fromImage(QImage(rgba, image.width, image.height, image.width*4, QImage.Format.Format_RGBA8888).copy())
+            scene.addPixmap(pixmap)
+            self.view.setSceneRect(QRectF(pixmap.rect()))
+            self.view.fitInView(self.view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+            lost = sum(r['frames'].get(str(self.timeline.value()), {}).get('lost', False) for r in replacements(self.project))
+            if lost:
+                self.notice.setText(f'{lost} replacement track(s) lost at this frame. Re-mark a region to start a new segment.')
+            return
         pixmap = QPixmap(str(self.project/'frames'/f'{self.timeline.value():06d}.jpg'))
         scene.addPixmap(pixmap).setOpacity(.25)
         self.view.setSceneRect(QRectF(0, 0, self.info['width'], self.info['height']))
