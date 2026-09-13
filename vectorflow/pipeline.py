@@ -15,6 +15,7 @@ from PIL import Image
 from .curves import render, svg, trace
 from .stability import Stabilizer
 from .tracking import PathTracker, RegionTracker
+from .color import ColorTracer
 
 
 class Cancelled(Exception):
@@ -29,6 +30,7 @@ class Settings:
     detail: int = 70
     max_seconds: float = 0
     regions: list = field(default_factory=list)
+    style: str = 'outlines'
 
 
 def read_json(path):
@@ -82,6 +84,7 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
         stabilizer = Stabilizer()
         tracker = PathTracker()
         regions = RegionTracker(settings.regions)
+        color_tracer = ColorTracer()
         for i in range(count):
             if cancel.is_set():
                 raise Cancelled('Conversion cancelled. Completed frames remain available.')
@@ -98,16 +101,21 @@ def convert(source, destination, settings=None, progress=None, cancel=None):
             width, height = max(2, round(w*factor)), max(2, round(h*factor))
             rgb = cv2.cvtColor(cv2.resize(bgr, (width, height), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
             mask, region_records = regions.update(rgb)
-            paths = trace(stabilizer.apply(rgb), settings.tolerance, settings.detail, mask)
+            stable = stabilizer.apply(rgb)
+            if settings.style == 'color':
+                paths, styles = color_tracer.trace(stable, settings.tolerance, mask)
+            else:
+                paths = trace(stable, settings.tolerance, settings.detail, mask)
+                styles = [{} for _ in paths]
             tracked = tracker.update(rgb, paths)
             paths = [record['path'] for record in tracked]
             stem = frames/f'{i:06d}'
             Image.fromarray(rgb).save(str(stem)+'.jpg', quality=90)
             write_json(str(stem)+'.json', dict(time=i/fps, paths=paths,
                        path_ids=[r['id'] for r in tracked], transforms=[r['transform'] for r in tracked],
-                       regions=region_records))
-            Path(str(stem)+'.svg').write_text(svg(paths, width, height), encoding='utf-8')
-            render(paths, (width, height)).save(str(stem)+'.png')
+                       regions=region_records, styles=styles))
+            Path(str(stem)+'.svg').write_text(svg(paths, width, height, styles), encoding='utf-8')
+            render(paths, (width, height), styles=styles).save(str(stem)+'.png')
             manifest.update(frames=i+1, width=width, height=height)
             write_json(destination/'project.json', manifest)
             progress(i+1, count, str(destination))

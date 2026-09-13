@@ -48,6 +48,7 @@ class Canvas(QWidget):
         self.dark = True
         self.mode = 'Vectors'
         self.paths = []
+        self.styles = []
         self.source = QPixmap()
         self.dimensions = (720, 405)
         self.reveal = 1.0
@@ -139,6 +140,20 @@ class Canvas(QWidget):
             painter.setOpacity(1)
         if self.mode == 'Source':
             return
+        for i, path in enumerate(self.paths):
+            style = self.styles[i] if i < len(self.styles) else {}
+            if not style.get('fill'):
+                continue
+            compound = QPainterPath()
+            compound.setFillRule(Qt.FillRule.OddEvenFill)
+            for ring in [path] + style.get('holes', []):
+                if not ring:
+                    continue
+                compound.moveTo(*ring[0][0])
+                for curve in ring:
+                    compound.cubicTo(*curve[1], *curve[2], *curve[3])
+                compound.closeSubpath()
+            painter.fillPath(compound, QColor(style['fill']))
         curves = [c for path in self.paths for c in path]
         count = min(len(curves), int(len(curves)*self.reveal))
         shape = QPainterPath()
@@ -146,7 +161,8 @@ class Canvas(QWidget):
             shape.moveTo(*curve[0])
             shape.cubicTo(*curve[1], *curve[2], *curve[3])
         painter.setPen(QPen(QColor('#d6e4b5' if self.dark else '#20281d'), 1.2))
-        painter.drawPath(shape)
+        if not any(style.get('fill') for style in self.styles) or self.mode == 'Mapping':
+            painter.drawPath(shape)
         if self.mode == 'Mapping':
             for curve in curves[max(0, count-5):count]:
                 painter.setPen(QPen(QColor('#efb46b' if self.dark else '#a65712'), .85))
@@ -273,6 +289,7 @@ class Window(QMainWindow):
         settings = [Settings(), Settings(max_width=1080, fps=24, tolerance=1, detail=50),
                     Settings(max_width=480, fps=8, tolerance=2, detail=90)][self.quality.currentIndex()]
         settings.regions = self.regions
+        settings.style = 'color' if self.trace_style.currentIndex() else 'outlines'
         destination = ROOT/'outputs'/f'{self.source.stem[:45]}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:6]}'
         self.project = None
         self.info = None
@@ -287,6 +304,7 @@ class Window(QMainWindow):
         self.open_button.setEnabled(False)
         self.convert_button.setEnabled(False)
         self.quality.setEnabled(False)
+        self.trace_style.setEnabled(False)
         self.selection_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.cancel_button.show()
@@ -333,6 +351,7 @@ class Window(QMainWindow):
         self.choose.setEnabled(True)
         self.open_button.setEnabled(True)
         self.quality.setEnabled(True)
+        self.trace_style.setEnabled(True)
         self.selection_button.setEnabled(True)
         self.convert_button.setEnabled(bool(self.source))
         self.cancel_button.hide()
@@ -382,7 +401,8 @@ class Window(QMainWindow):
             return
         stem = self.project/'frames'/f'{index:06d}'
         try:
-            paths = read_json(str(stem)+'.json')['paths']
+            data = read_json(str(stem)+'.json')
+            paths = data['paths']
             source = QPixmap(str(stem)+'.jpg')
             if source.isNull():
                 raise ValueError('Missing source preview')
@@ -391,6 +411,7 @@ class Window(QMainWindow):
             self.stop_playback()
             return
         self.canvas.paths = paths
+        self.canvas.styles = data.get('styles', [])
         self.canvas.source = source
         self.canvas.dimensions = (self.info['width'], self.info['height'])
         self.canvas.reveal = 1

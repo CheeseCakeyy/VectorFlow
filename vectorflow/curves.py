@@ -64,29 +64,52 @@ def trace(rgb, tolerance=1.5, detail=70, mask=None):
     return paths
 
 
-def svg(paths, width, height):
+def path_d(path):
+    if not path:
+        return ''
+    return f'M {path[0][0][0]:.3f} {path[0][0][1]:.3f} ' + ' '.join('C ' + ' '.join(f'{v:.3f}' for point in c[1:] for v in point) for c in path)
+
+
+def svg(paths, width, height, styles=None, transparent=False):
     items = []
-    for path in paths:
+    for i, path in enumerate(paths):
         if not path:
             continue
-        d = f'M {path[0][0][0]:.3f} {path[0][0][1]:.3f} '
-        d += ' '.join('C ' + ' '.join(f'{v:.3f}' for point in c[1:] for v in point) for c in path)
-        items.append(f'<path d="{d}"/>')
+        d = path_d(path)
+        style = styles[i] if styles else {}
+        if style.get('fill'):
+            d += ' Z ' + ' '.join(path_d(hole)+' Z' for hole in style.get('holes', []))
+            items.append(f'<path d="{d}" fill="{style["fill"]}" stroke="none" fill-rule="evenodd"/>')
+        else:
+            items.append(f'<path d="{d}"/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-            f'viewBox="0 0 {width} {height}"><rect width="100%" height="100%" fill="#10151f"/>'
+            f'viewBox="0 0 {width} {height}">' + ('' if transparent else '<rect width="100%" height="100%" fill="#10151f"/>') +
             '<g fill="none" stroke="#75e5cc" stroke-width="1.2" stroke-linecap="round" '
             'stroke-linejoin="round">' + ''.join(items) + '</g></svg>')
 
 
-def render(paths, size, scale=2):
-    image = Image.new('RGB', (size[0]*scale, size[1]*scale), '#10151f')
+def render(paths, size, scale=2, styles=None, transparent=False):
+    image = Image.new('RGBA', (size[0]*scale, size[1]*scale), (0, 0, 0, 0) if transparent else '#10151f')
     draw = ImageDraw.Draw(image)
-    for path in paths:
+    def polygon(path):
         points = []
         for curve in path:
             length = np.linalg.norm(np.diff(curve, axis=0), axis=1).sum()
             samples = evaluate(curve, np.linspace(0, 1, max(4, min(100, int(length/2)+1))))
             points.extend(tuple(p*scale) for p in samples)
+        return points
+    for i, path in enumerate(paths):
+        points = polygon(path)
+        style = styles[i] if styles else {}
+        if style.get('fill') and len(points) >= 3:
+            mask = Image.new('L', image.size)
+            region = ImageDraw.Draw(mask)
+            region.polygon(points, fill=255)
+            for hole in style.get('holes', []):
+                region.polygon(polygon(hole), fill=0)
+            image.paste(Image.new('RGBA', image.size, style['fill']), (0, 0), mask)
+            continue
         if len(points) >= 2:
             draw.line(points, fill='#75e5cc', width=max(1, round(1.2*scale)), joint='curve')
-    return image.resize(size, Image.Resampling.LANCZOS)
+    result = image.resize(size, Image.Resampling.LANCZOS)
+    return result if transparent else result.convert('RGB')
