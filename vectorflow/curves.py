@@ -43,7 +43,10 @@ def trace(rgb, tolerance=1.5, detail=70):
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0.8)
     edges = cv2.Canny(gray, detail, detail*2)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours, hierarchy = cv2.findContours(edges, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+    # CCOMP preserves disconnected details inside a larger outline, such as eyes,
+    # while skipping the reverse boundary of the same thin edge component.
+    contours = [c for i, c in enumerate(contours) if hierarchy[0][i][3] == -1]
     paths = []
     for contour in sorted(contours, key=lambda c: cv2.arcLength(c, True), reverse=True):
         if cv2.arcLength(contour, True) < 12:
