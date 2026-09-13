@@ -15,6 +15,7 @@ def samples(path):
 
 class Motion:
     def __init__(self, before, after):
+        self.before, self.after = before, after
         self.a = self.b = np.empty((0, 2), np.float32)
         # Large illumination/scene changes invalidate identities.
         self.cut = np.mean(cv2.absdiff(before, after)) > 65
@@ -33,7 +34,7 @@ class Motion:
         keep &= np.linalg.norm(points[:, 0]-back[:, 0], axis=1) < 1.5
         self.a, self.b = points[keep, 0], moved[keep, 0]
 
-    def within(self, polygon):
+    def within(self, polygon, refine=False):
         polygon = np.asarray(polygon, np.float32)
         mask = np.array([cv2.pointPolygonTest(polygon, tuple(map(float, p)), False) >= 0 for p in self.a], bool)
         a, b = self.a[mask], self.b[mask]
@@ -45,6 +46,22 @@ class Motion:
         scale = np.linalg.norm(matrix[:, 0])
         if not .7 < scale < 1.4:
             return None
+        if refine:
+            lo = np.maximum(0, np.floor(polygon.min(axis=0)-10).astype(int))
+            hi = np.minimum([self.before.shape[1], self.before.shape[0]], np.ceil(polygon.max(axis=0)+10).astype(int))
+            x, y = lo
+            right, bottom = hi
+            if right-x > 12 and bottom-y > 12:
+                local = matrix.astype(np.float32).copy()
+                local[:, 2] += local[:, :2] @ lo-lo
+                try:
+                    correlation, refined = cv2.findTransformECC(self.before[y:bottom, x:right], self.after[y:bottom, x:right],
+                        local, cv2.MOTION_AFFINE, (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 40, 1e-5))
+                    refined[:, 2] += lo-refined[:, :2] @ lo
+                    if correlation > .85 and np.linalg.norm(refined[:, :2]-matrix[:, :2]) < .15:
+                        matrix = refined
+                except cv2.error:
+                    pass
         return np.vstack([matrix, [0, 0, 1]])
 
 
@@ -121,7 +138,7 @@ class RegionTracker:
             for record in self.records:
                 if record['lost']:
                     continue
-                matrix = motion.within(record['corners']) if not motion.cut else None
+                matrix = motion.within(record['corners'], refine=True) if not motion.cut else None
                 if matrix is None:
                     # A truly stationary region needs no feature motion estimate.
                     mask = np.zeros_like(gray)

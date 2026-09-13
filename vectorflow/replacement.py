@@ -36,14 +36,52 @@ def text_asset(text, size, color):
 
 
 def create_text(project, rect, start, end, text, color, progress, cancel):
+    info = read_json(Path(project)/'project.json')
+    size = (round(rect[2]*info['width']), round(rect[3]*info['height']))
+    asset, font_size = text_asset(text, size, color)
+    return track_asset(project, rect, start, end, asset,
+                       dict(type='text', text=text, color=color, font_size=font_size), progress, cancel)
+
+
+def create_artwork(project, rect, start, end, artwork, progress, cancel):
+    from PIL import ImageOps
+    info = read_json(Path(project)/'project.json')
+    size = (round(rect[2]*info['width']), round(rect[3]*info['height']))
+    if min(size) < 8:
+        raise ValueError('Choose a larger replacement region.')
+    if Path(artwork).suffix.lower() == '.svg':
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QImage, QPainter
+        from PySide6.QtCore import Qt
+        renderer = QSvgRenderer(str(artwork))
+        if not renderer.isValid():
+            raise ValueError('This SVG could not be read.')
+        native = renderer.defaultSize()
+        native.scale(size[0], size[1], Qt.AspectRatioMode.KeepAspectRatio)
+        raster = QImage(native, QImage.Format.Format_RGBA8888)
+        raster.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(raster)
+        renderer.render(painter)
+        painter.end()
+        loaded = Image.frombytes('RGBA', (raster.width(), raster.height()), bytes(raster.bits()))
+    else:
+        with Image.open(artwork) as image:
+            loaded = ImageOps.exif_transpose(image).convert('RGBA')
+    loaded = ImageOps.contain(loaded, size, Image.Resampling.LANCZOS)
+    asset = Image.new('RGBA', size)
+    asset.alpha_composite(loaded, ((size[0]-loaded.width)//2, (size[1]-loaded.height)//2))
+    return track_asset(project, rect, start, end, asset,
+                       dict(type='artwork', name=Path(artwork).name), progress, cancel)
+
+
+def track_asset(project, rect, start, end, asset, attributes, progress, cancel):
     project = Path(project)
     info = read_json(project/'project.json')
     width, height = info['width'], info['height']
     x, y, w, h = np.array(rect)*[width, height, width, height]
     if w < 8 or h < 8 or start < 0 or end < start or end >= info['frames']:
         raise ValueError('Choose a valid region and frame range.')
-    asset, font_size = text_asset(text, (round(w), round(h)), color)
-    record = dict(id=uuid.uuid4().hex, type='text', text=text, color=color, font_size=font_size,
+    record = dict(id=uuid.uuid4().hex, **attributes,
                   rect=[float(x), float(y), float(w), float(h)], start=start, end=end, frames={})
     tracker = RegionTracker([dict(rect=rect, mode='include')])
     for index in range(start, end+1):
@@ -119,7 +157,11 @@ def composite_svg(project, index):
         a, c, e = matrix[0]
         b, d, f = matrix[1]
         x, y, rw, rh = record['rect']
-        elements.append(f'<text transform="matrix({a} {b} {c} {d} {e} {f})" x="{x+rw/2}" y="{y+rh/2}" '
-                        f'text-anchor="middle" dominant-baseline="central" font-family="Segoe UI" font-size="{record["font_size"]}" '
-                        f'fill="{escape(record["color"])}">{escape(record["text"])}</text>')
+        if record['type'] == 'text':
+            elements.append(f'<text transform="matrix({a} {b} {c} {d} {e} {f})" x="{x+rw/2}" y="{y+rh/2}" '
+                            f'text-anchor="middle" dominant-baseline="central" font-family="Segoe UI" font-size="{record["font_size"]}" '
+                            f'fill="{escape(record["color"])}">{escape(record["text"])}</text>')
+        else:
+            encoded = base64.b64encode((Path(project)/record['asset']).read_bytes()).decode('ascii')
+            elements.append(f'<image transform="matrix({a} {b} {c} {d} {e} {f})" x="{x}" y="{y}" width="{rw}" height="{rh}" href="data:image/png;base64,{encoded}"/>')
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">' + ''.join(elements) + '</svg>'

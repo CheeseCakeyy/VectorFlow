@@ -6,10 +6,35 @@ import cv2
 import numpy as np
 from PIL import Image
 from vectorflow.pipeline import write_json
-from vectorflow.replacement import create_text, replacements, composite, composite_svg
+from vectorflow.replacement import create_text, create_artwork, replacements, composite, composite_svg
 
 
 class ReplacementTests(unittest.TestCase):
+    def test_artwork_follows_rotation_and_scale_with_alpha(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'frames').mkdir()
+            write_json(root/'project.json', dict(width=240, height=160, frames=2, fps=12))
+            image = np.full((160, 240, 3), 210, np.uint8)
+            cv2.putText(image, 'OLD', (65, 85), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+            motion = cv2.getRotationMatrix2D((100, 75), 8, 1.05)
+            moved = cv2.warpAffine(image, motion, (240, 160), borderValue=(210, 210, 210))
+            Image.fromarray(image).save(root/'frames/000000.jpg')
+            Image.fromarray(moved).save(root/'frames/000001.jpg')
+            asset = Image.new('RGBA', (60, 40))
+            from PIL import ImageDraw
+            ImageDraw.Draw(asset).polygon([(8, 32), (30, 4), (52, 32)], fill=(0, 250, 20, 255))
+            asset.save(root/'art.png')
+            create_artwork(root, [55/240, 50/160, 105/240, 50/160], 0, 1, root/'art.png', lambda *_: None, threading.Event())
+            record = replacements(root)[0]
+            self.assertFalse(record['frames']['1']['lost'])
+            actual = np.array(record['frames']['1']['matrix'])[:2]
+            np.testing.assert_allclose(actual[:, :2], motion[:, :2], atol=.03)
+            with Image.open(root/record['asset']) as saved:
+                self.assertEqual(saved.getpixel((0, 0))[3], 0)
+            rendered = np.array(composite(root, 1))
+            self.assertTrue(((rendered[:, :, 1] > 230) & (rendered[:, :, 0] < 30)).any())
+
     def test_text_tracks_motion_timing_and_survives_reload(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

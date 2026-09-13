@@ -87,6 +87,9 @@ class Editor(QDialog):
         self.export_worker = None
         self.replace_rect = None
         self.add_replacement_tab()
+        self.art_rect = None
+        self.artwork = None
+        self.add_artwork_tab()
         self.add_export_tab()
         layout.addWidget(self.tabs)
         self.view = EditView(self)
@@ -108,6 +111,7 @@ class Editor(QDialog):
         layout.addWidget(done)
         self.load(index)
         self.range_start.setValue(index+1)
+        self.art_start.setValue(index+1)
         self.tabs.currentChanged.connect(lambda _: self.load(self.timeline.value()))
 
     def add_replacement_tab(self):
@@ -147,9 +151,9 @@ class Editor(QDialog):
         layout.addLayout(row)
         self.tabs.addTab(page, 'Replace text')
 
-    def pick_replacement_region(self):
+    def pick_replacement_region(self, checked=False, artwork=False):
         from .selection import RegionDialog
-        frame = self.range_start.value()-1
+        frame = (self.art_start if artwork else self.range_start).value()-1
         pixmap = QPixmap(str(self.project/'frames'/f'{frame:06d}.jpg'))
         dialog = RegionDialog(pixmap, [], self)
         dialog.setWindowTitle('Mark the text or object to replace — one include rectangle')
@@ -158,9 +162,62 @@ class Editor(QDialog):
             if len(includes) != 1:
                 self.notice.setText('Select exactly one include rectangle for replacement.')
                 return
-            self.replace_rect = includes[0]['rect']
-            self.replace_anchor = frame
-            self.notice.setText(f'Region marked at frame {frame+1}. Enter words, then track the replacement.')
+            if artwork:
+                self.art_rect = includes[0]['rect']
+                self.art_anchor = frame
+            else:
+                self.replace_rect = includes[0]['rect']
+                self.replace_anchor = frame
+            self.notice.setText(f'Region marked at frame {frame+1}. Configure the replacement, then track it.')
+
+    def add_artwork_tab(self):
+        self.artwork_page = QWidget()
+        layout = QVBoxLayout(self.artwork_page)
+        hint = QLabel('Replace a marked object with your PNG, WebP or SVG artwork. Transparency and aspect ratio are preserved.\nArtwork follows position, rotation and uniform scale. This version does not transfer body poses, expressions or foreground occlusion.')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        row = QHBoxLayout()
+        self.art_start, self.art_end = QSpinBox(), QSpinBox()
+        for spin in [self.art_start, self.art_end]:
+            spin.setRange(1, self.info['frames'])
+        self.art_end.setValue(self.info['frames'])
+        row.addWidget(QLabel('Start frame'))
+        row.addWidget(self.art_start)
+        row.addWidget(QLabel('End frame'))
+        row.addWidget(self.art_end)
+        region = QPushButton('Mark object region…')
+        region.clicked.connect(lambda: self.pick_replacement_region(artwork=True))
+        row.addWidget(region)
+        layout.addLayout(row)
+        row = QHBoxLayout()
+        choose = QPushButton('Choose artwork…')
+        choose.clicked.connect(self.choose_artwork)
+        row.addWidget(choose)
+        self.art_label = QLabel('No artwork selected')
+        row.addWidget(self.art_label, 1)
+        run = QPushButton('Track & replace object')
+        run.clicked.connect(self.replace_artwork)
+        row.addWidget(run)
+        remove = QPushButton('Remove last replacement')
+        remove.clicked.connect(self.remove_replacement)
+        row.addWidget(remove)
+        layout.addLayout(row)
+        self.tabs.addTab(self.artwork_page, 'Replace artwork')
+
+    def choose_artwork(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Choose replacement artwork', '', 'Artwork (*.png *.webp *.svg *.jpg *.jpeg)')
+        if path:
+            self.artwork = path
+            self.art_label.setText(Path(path).name)
+
+    def replace_artwork(self):
+        from .replacement import create_artwork
+        if not self.artwork or not self.art_rect or self.art_anchor != self.art_start.value()-1:
+            self.notice.setText('Choose artwork and mark an object at the selected start frame first.')
+            return
+        start, end = self.art_start.value()-1, self.art_end.value()-1
+        self.start_job(lambda progress, cancel: create_artwork(self.project, self.art_rect, start, end,
+                                                             self.artwork, progress, cancel))
 
     def replace_text(self):
         from .replacement import create_text
@@ -277,7 +334,7 @@ class Editor(QDialog):
         self.view.handles = []
         scene = self.view.scene()
         scene.clear()
-        if self.tabs.currentWidget() == self.replacement_page:
+        if self.tabs.currentWidget() in (self.replacement_page, self.artwork_page):
             from .replacement import composite, replacements
             from PySide6.QtGui import QImage
             image = composite(self.project, self.timeline.value())
