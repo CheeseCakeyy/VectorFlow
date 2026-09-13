@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QProgressBar, QSlider, QFrame, QButtonGroup)
 
 from .pipeline import Settings, Cancelled, convert, export_video, read_json
-from .design import build_layout, paper_grid, empty_art, style_window
+from .design import build_layout, paper_grid, empty_art, style_window, demo_points
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +40,8 @@ class Worker(QThread):
 
 
 class Canvas(QWidget):
+    demo_changed = Signal(object)
+
     def __init__(self):
         super().__init__()
         self.setMinimumSize(440, 300)
@@ -49,13 +51,82 @@ class Canvas(QWidget):
         self.source = QPixmap()
         self.dimensions = (720, 405)
         self.reveal = 1.0
+        self.demo_normalized = None
+        self.drag_point = None
+        self.hover_point = None
+        self.drag_offset = QPointF()
+        self.setMouseTracking(True)
+
+    def demo_geometry(self):
+        if self.demo_normalized is None:
+            return demo_points(self.rect())
+        return [(x*self.width(), y*self.height()) for x, y in self.demo_normalized]
+
+    def hit_point(self, position):
+        if not self.source.isNull():
+            return None
+        candidates = []
+        for i, (x, y) in enumerate(self.demo_geometry()):
+            distance = (position.x()-x)**2 + (position.y()-y)**2
+            if distance <= (23 if i in (0, 3) else 17)**2:
+                candidates.append((distance, i))
+        return min(candidates)[1] if candidates else None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_point = self.hit_point(event.position())
+            if self.drag_point is not None:
+                self.drag_offset = QPointF(*self.demo_geometry()[self.drag_point])-event.position()
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                event.accept()
+                self.update()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.drag_point is not None and self.source.isNull():
+            point = event.position()+self.drag_offset
+            points = self.demo_geometry()
+            points[self.drag_point] = (max(24, min(self.width()-24, point.x())),
+                                       max(168, min(self.height()-70, point.y())))
+            self.demo_normalized = [(x/self.width(), y/self.height()) for x, y in points]
+            self.demo_changed.emit(points)
+        else:
+            self.hover_point = self.hit_point(event.position())
+            self.setCursor(Qt.CursorShape.OpenHandCursor if self.hover_point is not None else Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_point = None
+            self.hover_point = self.hit_point(event.position())
+            self.setCursor(Qt.CursorShape.OpenHandCursor if self.hover_point is not None else Qt.CursorShape.ArrowCursor)
+            self.update()
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self.source.isNull() and event.button() == Qt.MouseButton.LeftButton:
+            self.demo_normalized = None
+            self.drag_point = self.hover_point = None
+            self.demo_changed.emit(self.demo_geometry())
+            self.unsetCursor()
+            self.update()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def leaveEvent(self, event):
+        self.hover_point = None
+        self.update()
+        super().leaveEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         paper_grid(painter, self.rect(), self.dark)
         if self.source.isNull():
-            empty_art(painter, self.rect(), self.dark)
+            empty_art(painter, self.rect(), self.dark, self.demo_geometry(),
+                      self.drag_point if self.drag_point is not None else self.hover_point)
             return
         w, h = self.dimensions
         scale = min((self.width()-36)/w, (self.height()-36)/h)
@@ -106,6 +177,7 @@ class Window(QMainWindow):
         self.mapping = False
         self.dark = True
         build_layout(self, Canvas)
+        self.canvas.demo_changed.connect(self.show_demo_equation)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
@@ -114,6 +186,11 @@ class Window(QMainWindow):
 
     def apply_theme(self):
         style_window(self)
+
+    def show_demo_equation(self, points):
+        coordinates = '    '.join(f'P{i} = ({x:.0f}, {y:.0f})' for i, (x, y) in enumerate(points))
+        self.equation.setText('BÉZIER PLAYGROUND   ·   0 ≤ t ≤ 1\n' + coordinates +
+                             '\nB(t) = (1−t)³P₀ + 3(1−t)²tP₁ + 3(1−t)t²P₂ + t³P₃')
 
     def toggle_theme(self):
         self.dark = not self.dark

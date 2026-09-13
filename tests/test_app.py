@@ -8,13 +8,37 @@ from pathlib import Path
 from unittest.mock import patch
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from vectorflow.app import Window
 
 
 class AppTests(unittest.TestCase):
+    def test_drag_all_demo_points_and_reset(self):
+        window = Window()
+        window.show()
+        self.app.processEvents()
+        canvas = window.canvas
+        original = np.array(canvas.demo_geometry())
+        for i in range(4):
+            before = np.array(canvas.demo_geometry())
+            start = QPoint(round(before[i, 0]), round(before[i, 1]))
+            target = start + QPoint(28, -12)
+            QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=start)
+            self.assertEqual(canvas.drag_point, i)
+            QTest.mouseMove(canvas, target)
+            QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=target)
+            after = np.array(canvas.demo_geometry())
+            np.testing.assert_allclose(after[i]-before[i], [28, -12], atol=1)
+            np.testing.assert_allclose(np.delete(after, i, 0), np.delete(before, i, 0))
+            self.assertIn('BÉZIER PLAYGROUND', window.equation.text())
+        window.grab().save('test-output/playground-dragged.png')
+        QTest.mouseDClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(30, 30))
+        np.testing.assert_allclose(canvas.demo_geometry(), original)
+        self.assertIsNone(canvas.drag_point)
+        window.close()
+
     def setUp(self):
         self.warning_patch = patch('vectorflow.app.QMessageBox.warning', return_value=None)
         self.warnings = self.warning_patch.start()

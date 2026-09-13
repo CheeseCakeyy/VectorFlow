@@ -67,7 +67,14 @@ def paper_grid(p, rect, dark):
             p.drawLine(0, y, rect.width(), y)
 
 
-def empty_art(p, rect, dark):
+def demo_points(rect):
+    w, h = rect.width(), rect.height()
+    y = max(175, h*.64)
+    amplitude = max(15, min(78, (h-230)*.35))
+    return [(w*.12, y+15), (w*.34, y-amplitude), (w*.66, y+amplitude*.8), (w*.86, y-15)]
+
+
+def empty_art(p, rect, dark, points=None, active=None):
     ink = QColor('#f2f1e8' if dark else '#1b1e19')
     w, h = rect.width(), rect.height()
     p.setPen(ink)
@@ -77,9 +84,7 @@ def empty_art(p, rect, dark):
     p.drawText(QRectF(25, 53, w-50, 115), 'From footage.\nTo formulas.')
     # A cubic construction diagram, drawn with the same mathematical primitive
     # used by the animation renderer; this is the empty-state illustration.
-    y = max(175, h*.64)
-    amplitude = max(15, min(78, (h-230)*.35))
-    a, b, c, d = (w*.12, y+15), (w*.34, y-amplitude), (w*.66, y+amplitude*.8), (w*.86, y-15)
+    a, b, c, d = points if points is not None else demo_points(rect)
     p.setPen(QPen(QColor('#8a9180'), 1, Qt.PenStyle.DashLine))
     p.drawLine(*map(int, (*a, *b)))
     p.drawLine(*map(int, (*c, *d)))
@@ -93,11 +98,16 @@ def empty_art(p, rect, dark):
         p.setBrush(QColor('#ffbf59') if i in (1, 2) else ink)
         p.setPen(QPen(ink, 1.5))
         p.drawEllipse(QRectF(x-radius, yy-radius, radius*2, radius*2))
+        if i == active:
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor('#ffbf59'), 2))
+            p.drawEllipse(QRectF(x-radius-5, yy-radius-5, radius*2+10, radius*2+10))
+        p.setPen(ink)
         p.setFont(QFont('Segoe UI', 9))
         p.drawText(QRectF(x-12, yy+radius+8, 42, 20), f'P{i}')
     p.setPen(ink)
     p.setFont(QFont('Segoe UI', 11))
-    p.drawText(QRectF(25, h-44, w-50, 28), 'Drop a video here. We’ll take care of the curves.  ↗')
+    p.drawText(QRectF(25, h-44, w-50, 28), 'Drag the points to explore. Double-click to reset.')
 
 
 def build_layout(window, canvas_type):

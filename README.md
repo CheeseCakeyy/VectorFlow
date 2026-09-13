@@ -4,6 +4,8 @@ A local Windows desktop app that automatically redraws a video as animated cubic
 
 The studio uses layered folder tabs, graph-paper surfaces, bold typography, and amber/sage accents in both light and dark modes. The three tabs switch between Source, Vectors, and Mapping. A live counter displays the number of curves in the current frame. At smaller window sizes, the control column scrolls so all actions remain reachable.
 
+Before loading a video, drag any of the four points in the Bézier playground to reshape the curve and see its coordinates update. Double-click the playground to reset it. This interactive illustration is separate from automatically converted video paths.
+
 ## Start
 
 Dependencies are already installed in this workspace. Double-click **Start VectorFlow.bat**.
