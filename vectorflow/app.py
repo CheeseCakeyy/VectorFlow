@@ -478,6 +478,8 @@ class Window(QMainWindow):
             return
         path, _ = QFileDialog.getSaveFileName(self, 'Export vector animation', str(self.project/'animation.mp4'), 'MP4 video (*.mp4)')
         if path:
+            if not Path(path).suffix:
+                path += '.mp4'
             self.stop_playback()
             self.progress.setRange(0, 0)
             self.status.setText('Encoding vector animation and preserving available source audio…')

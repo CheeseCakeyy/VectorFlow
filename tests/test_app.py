@@ -90,9 +90,11 @@ class AppTests(unittest.TestCase):
             self.assertGreater(window.canvas.reveal, .4)
             self.assertLess(window.canvas.reveal, .7)
             self.app.processEvents()
+            QTest.qWait(150)
             window.grab().save('test-output/ui-light.png')
             window.toggle_theme()
             self.app.processEvents()
+            QTest.qWait(150)
             window.grab().save('test-output/ui-dark.png')
         window.close()
 
