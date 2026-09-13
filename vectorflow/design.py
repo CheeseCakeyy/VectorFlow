@@ -122,15 +122,22 @@ def build_layout(window, canvas_type):
             item.setObjectName(name)
         return item
 
-    top = QHBoxLayout()
-    top.addWidget(label('VectorFlow', 'brand'))
-    top.addSpacing(24)
-    top.addWidget(label('A TOOL FOR\nMATHEMATICAL MOTION', 'micro'))
+    header = QWidget()
+    header.setObjectName('header')
+    header.setFixedHeight(64)
+    top = QHBoxLayout(header)
+    top.setContentsMargins(0, 4, 0, 4)
+    top.setSpacing(0)
+    top.addWidget(label('VectorFlow', 'brand'), 0, Qt.AlignmentFlag.AlignVCenter)
+    top.addSpacing(32)
+    top.addWidget(label('A TOOL FOR\nMATHEMATICAL MOTION', 'tagline'), 0, Qt.AlignmentFlag.AlignVCenter)
     top.addStretch()
-    top.addWidget(label('LOCAL STUDIO   /   01', 'micro'))
+    top.addWidget(label('LOCAL STUDIO   /   01', 'studio'), 0, Qt.AlignmentFlag.AlignVCenter)
+    top.addSpacing(24)
     s.theme = button('Light mode', s.toggle_theme, 'theme')
-    top.addWidget(s.theme)
-    layout.addLayout(top)
+    s.theme.setFixedSize(116, 38)
+    top.addWidget(s.theme, 0, Qt.AlignmentFlag.AlignVCenter)
+    layout.addWidget(header)
     layout.addSpacing(16)
 
     tabs = QVBoxLayout()
@@ -250,7 +257,9 @@ def style_window(s):
         QLabel {{ background: transparent; }}
         QFrame#panel {{ background: {panel}; border: 1px solid {border}; border-left: 0; }}
         QFrame#stage {{ background: {panel}; border: 1px solid {border}; }}
-        QLabel#brand {{ font-size: 35px; font-weight: 800; letter-spacing: -2px; }}
+        QLabel#brand {{ font-size: 34px; font-weight: 700; letter-spacing: -1px; padding-right: 3px; }}
+        QLabel#tagline {{ font-size: 11px; font-weight: 500; color: {muted}; border-left: 1px solid {border}; padding: 3px 0 3px 20px; }}
+        QLabel#studio {{ font-size: 11px; font-weight: 500; color: {muted}; }}
         QLabel#micro {{ font-size: 10px; font-weight: 600; }}
         QLabel#headline {{ font-size: 32px; font-weight: 750; letter-spacing: -1px; }}
         QLabel#muted {{ color: {muted}; font-size: 12px; }}
@@ -261,7 +270,7 @@ def style_window(s):
         QPushButton, QComboBox {{ background: {panel}; border: 1px solid {border}; border-radius: 0; padding: 10px 12px; text-align: left; }}
         QPushButton:hover {{ background: {'#394031' if s.dark else '#e1e5d7'}; }}
         QPushButton:focus {{ border: 2px solid #9b7638; }}
-        QPushButton#theme {{ border-radius: 18px; padding: 8px 18px; }}
+        QPushButton#theme {{ border-radius: 19px; padding: 0; text-align: center; }}
         QPushButton#primary {{ background: #ffbf59; color: #191d16; font-weight: 750; border-color: #191d16; padding: 14px 12px; }}
         QPushButton#primary:hover {{ background: #ffd58c; }}
         QPushButton#mapping {{ background: #b8c8bd; color: #191d16; border-color: #191d16; }}
