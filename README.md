@@ -8,9 +8,15 @@ Before loading a video, drag any of the four points in the Bézier playground to
 
 ## Start
 
-Dependencies are already installed in this workspace. Double-click **Start VectorFlow.bat**.
+Install **64-bit Python 3.11 through 3.14** with Python on PATH, then run **setup.bat** once. Python 3.11 is the tested version. Setup requires internet access, downloads the pinned dependencies (including an FFmpeg executable), and checks runtime imports, dependency consistency, and FFmpeg availability. It also supports the Windows `py` launcher when `python` is unavailable. When setup reports Ready, double-click **Start VectorFlow.bat**. Processing runs locally and does not upload the video.
 
-On a fresh machine, install Python 3.11 or newer with Python on PATH, then run **setup.bat** once. Setup downloads the dependencies, including the bundled FFmpeg executable. Processing runs locally and does not upload the video.
+For automated installation, run `setup.bat --unattended` to skip the final keypress. If setup fails, review the error and rerun it after fixing the Python installation or connection. Supported dependency wheels must be available for your Python version; setup does not compile packages from source.
+
+The UI uses `PySide6-Essentials`, which supplies every Qt module used by VectorFlow,
+including SVG support and the UI test helpers. The larger Qt Addons package is not required.
+If Windows reports a path-too-long installation error, move the project to a shorter
+folder path and rerun setup. For missing runtime DLLs, install Microsoft's current
+[Visual C++ x64 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
 
 ```powershell
 python -m venv .venv
@@ -51,7 +57,7 @@ Each project contains:
 
 Raw SVG/PNG files in `frames/` represent the initial conversion. Use the Export tab to export subsequent edits and replacements.
 
-The supplied example's completed demo is in `outputs/apothecary-demo/` when running in the original workspace. Open its `project.json` to explore it.
+Demo outputs and source videos are not included in this repository. Use a video you own or have permission to use.
 
 ## How it works
 
@@ -71,6 +77,13 @@ References: [OpenCV contour extraction](https://docs.opencv.org/4.13.0/d4/d73/tu
 - Variable-frame-rate sources are treated using their reported nominal frame rate. Output timing is quantized to output frames; unusual variable-rate files may need conversion to constant frame rate first.
 - Large or long videos can take time and substantial disk space because previews and vector frames are retained. Delete unwanted project folders yourself when finished.
 - No Desmos integration, freehand pen tool, installer executable, or automatic updates are included.
+
+## License
+
+VectorFlow's code and documentation are available under the [MIT License](LICENSE).
+Copyright (c) 2026 Adwait Tagalpallewar. Third-party dependencies retain their own
+licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md). Source videos and
+generated media are not licensed by this repository.
 
 ## Development
 
